@@ -47,27 +47,43 @@ The Python redis client library should already be included in the project depend
 
 For interactive development and debugging, first allocate compute resources:
 
+#### Option 1: Using salloc (get an interactive shell on a compute node)
 ```bash
 # Allocate 8 GPUs on a single node
 salloc --partition=hopper-prod --nodes=1 --gpus-per-node=8 --cpus-per-gpu=11 --mem-per-gpu=248G --time=4:00:00
 
-# Once allocated, activate the environment
+# Once allocated, load CUDA and activate the environment
+module load cuda/12.4
 source .pipeline-rl/bin/activate
 
-# Run PipelineRL
-python -m pipelinerl.launch output_dir=results/base1
+# Run PipelineRL (use guessing config for testing)
+python -m pipelinerl.launch --config-name guessing output_dir=results/guessing
 ```
 
-For 4 GPUs:
+#### Option 2: Using srun (run command directly on compute node)
+```bash
+# Run a single command on a GPU node
+srun --partition=hopper-prod --nodes=1 --gpus-per-node=8 --cpus-per-gpu=11 --mem-per-gpu=248G --time=4:00:00 \
+  bash -c "module load cuda/12.4 && source .pipeline-rl/bin/activate && python -m pipelinerl.launch --config-name guessing output_dir=results/guessing"
+```
+
+#### For 4 GPUs (using salloc):
 ```bash
 salloc --partition=hopper-prod --nodes=1 --gpus-per-node=4 --cpus-per-gpu=11 --mem-per-gpu=248G --time=4:00:00
+module load cuda/12.4
 source .pipeline-rl/bin/activate
-python -m pipelinerl.launch --config-name base_4gpu output_dir=results/base1
+python -m pipelinerl.launch --config-name guessing output_dir=results/guessing
+```
+
+#### For 4 GPUs (using srun):
+```bash
+srun --partition=hopper-prod --nodes=1 --gpus-per-node=4 --cpus-per-gpu=11 --mem-per-gpu=248G --time=4:00:00 \
+  bash -c "module load cuda/12.4 && source .pipeline-rl/bin/activate && python -m pipelinerl.launch --config-name guessing output_dir=results/guessing"
 ```
 
 To use Redis instead of the filesystem for data streaming:
 ```bash
-python -m pipelinerl.launch streams=redis output_dir=results/base1
+python -m pipelinerl.launch --config-name guessing streams=redis output_dir=results/guessing
 ```
 
 When done, exit the allocation:
@@ -79,32 +95,59 @@ exit
 
 This cluster uses the `hopper-prod` partition with H100 GPUs (8 GPUs per node).
 
-#### Single node with 8 GPUs (default)
+#### Single node with 8 GPUs
 
 ```bash
 # Create logs directory
 mkdir -p logs
 
-# Submit the job
-sbatch scripts/run_slurm.sh
+# Submit the job (config name is required)
+sbatch scripts/run_slurm.sh math
+
+# Use different configs
+sbatch scripts/run_slurm.sh guessing
+
+# Pass additional Hydra overrides
+sbatch scripts/run_slurm.sh math streams=redis
 ```
 
-You can pass additional arguments to the launch script:
+**Note:** The config name is **required** as the first argument. The script automatically uses `results/<config_name>` as the output directory.
+
+### Understanding GPU Allocation
+
+PipelineRL automatically divides GPUs based on `actor_fraction` and `finetune_fraction` settings:
+
+**To override GPU allocation:**
 ```bash
-sbatch scripts/run_slurm.sh streams=redis model_path=Qwen/Qwen2.5-32B
+# Custom allocation: 1 GPU for actors, 3 GPUs for finetuning
+python -m pipelinerl.launch --config-name guessing_4gpu world.actor_fraction=2 world.finetune_fraction=6 output_dir=results/custom
 ```
 
 #### Single node with 4 GPUs
 
 ```bash
-sbatch scripts/run_slurm_4gpu.sh
+# Submit with config name (required)
+sbatch scripts/run_slurm_4gpu.sh math
+
+# Use different configs
+sbatch scripts/run_slurm_4gpu.sh guessing
+
+# Pass additional Hydra overrides
+sbatch scripts/run_slurm_4gpu.sh guessing world.actor_fraction=1 world.finetune_fraction=3
 ```
 
 #### Multi-node training
 
 For multi-node training (e.g., 2 nodes with 8 GPUs each = 16 GPUs total):
 ```bash
-sbatch --nodes=2 scripts/run_slurm.sh
+# Config name is required
+sbatch --nodes=2 scripts/run_slurm.sh math
+
+# Different config
+sbatch --nodes=2 scripts/run_slurm.sh guessing
+
+# With additional overrides
+sbatch --nodes=2 scripts/run_slurm.sh math streams=redis
 ```
 
 The script automatically detects multi-node setup and configures the environment variables (`WORLD_SIZE`, `RANK`, `MASTER_ADDR`) required by PipelineRL.
