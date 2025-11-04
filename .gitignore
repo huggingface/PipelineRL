@@ -186,3 +186,9 @@ results/
 data/
 cache/
 dump.rdb
+
+# virtual environment folders
+.pipeline-rl/
+
+# slurm logs
+logs/
