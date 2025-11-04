@@ -6,7 +6,7 @@ This guide provides instructions for setting up PipelineRL using `uv` instead of
 
 Clone the repository and change the directory to `pipelinerl`:
 ```bash
-git clone git@github.com:ServiceNow/PipelineRL.git
+git clone https://github.com/huggingface/PipelineRL.git
 cd PipelineRL
 ```
 
