@@ -20,8 +20,8 @@ dependencies = [
     "transformers==4.51.1" ,
     "flash-attn==2.7.3",
     "ring-flash-attn==0.1.6",
-    "math-verify[antlr4_9_3]==0.7.0",
-    "orjson==3.10.16",
+    "math-verify[antlr4_9_3]>=0.8.0",
+    "orjson>=3.11.4",
     "redis==5.2.1",
     "hydra-core>=1.3.2",
 ]
