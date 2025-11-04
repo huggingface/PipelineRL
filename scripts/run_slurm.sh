@@ -18,6 +18,9 @@ echo "GPUs per node: $SLURM_GPUS_PER_NODE"
 echo "Working directory: $(pwd)"
 echo "Starting time: $(date)"
 
+# Load CUDA module
+module load cuda/12.4
+
 # Activate environment
 source .pipeline-rl/bin/activate
 

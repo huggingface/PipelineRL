@@ -18,6 +18,9 @@ echo "GPUs per node: $SLURM_GPUS_PER_NODE"
 echo "Working directory: $(pwd)"
 echo "Starting time: $(date)"
 
+# Load CUDA module
+module load cuda/12.4
+
 # Activate environment
 source .pipeline-rl/bin/activate
 
@@ -25,6 +28,6 @@ source .pipeline-rl/bin/activate
 mkdir -p logs
 
 # Launch the training
-python -m pipelinerl.launch --config-name base_4gpu output_dir=results/base1 "$@"
+python -m pipelinerl.launch --config-name guessing output_dir=results/guessing "$@"
 
 echo "Ending time: $(date)"
