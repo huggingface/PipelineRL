@@ -32,14 +32,21 @@ uv pip install -e . --no-build-isolation
 
 By default Pipeline-RL will use the file system as the medium for streaming the generated data to the trainer processes. This works on one node, but the files can get quite large. To use Redis instead, you need to install the Redis server.
 
-Install the redis-server Python package:
+**Install redis-server via conda:**
+
+The `redis-server` PyPI package doesn't have Linux x86_64 wheels, so we use conda to install it:
+
 ```bash
-uv pip install redis-server
+conda install -y -c conda-forge redis-server
 ```
 
-Note: The `redis-server` PyPI package only supports Redis versions 5.0.7 and 6.0rc2, and officially supports Python 3.5-3.9. Since this project uses Python 3.11, compatibility may vary.
+This installs Redis which will be available in your PATH and can be used from within the uv virtual environment.
 
-The Python redis client library should already be included in the project dependencies, so you only need to ensure the Redis server is running.
+Verify the installation:
+```bash
+which redis-server
+redis-server --version
+```
 
 ## Run experiments
 

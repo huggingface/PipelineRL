@@ -358,8 +358,9 @@ def run_redis(cfg: DictConfig):
         "--protected-mode",
         "no",
         "--save",
-        cfg.streams.save,
     ]
+    # Split save parameter into separate arguments (e.g., "3600 1" -> ["3600", "1"])
+    cmd.extend(cfg.streams.save.split())
     logger.info(f"Running redis with command: {' '.join(cmd)}")
     save_command(Path(cfg.output_dir) / "redis", cmd)
     yield _popen(cmd, env=dict(os.environ))
