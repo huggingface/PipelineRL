@@ -80,6 +80,15 @@ def init_wandb(
     if cfg.wandb.wandb_group:
         init_kwargs["group"] = cfg.wandb.wandb_group
 
+    # Add trackio-specific HuggingFace parameters
+    if hasattr(cfg.wandb, 'space_id') and cfg.wandb.space_id:
+        init_kwargs["space_id"] = cfg.wandb.space_id
+        logging.info(f"Trackio will host dashboard on HuggingFace Space: {cfg.wandb.space_id}")
+
+    if hasattr(cfg.wandb, 'dataset_id') and cfg.wandb.dataset_id:
+        init_kwargs["dataset_id"] = cfg.wandb.dataset_id
+        logging.info(f"Trackio will persist data to HuggingFace Dataset: {cfg.wandb.dataset_id}")
+
     # Map wandb resume values to trackio format
     if resume == "allow":
         init_kwargs["resume"] = "allow"

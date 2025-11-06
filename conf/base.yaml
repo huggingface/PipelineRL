@@ -135,4 +135,8 @@ wandb:
   wandb_dir: null
   # Comma-separated list of keywords to tag the run.
   tags: []
+  # Trackio specific - HuggingFace Space ID for hosting dashboard
+  space_id: null
+  # Trackio specific - HuggingFace Dataset ID for persistent storage
+  dataset_id: null
 
