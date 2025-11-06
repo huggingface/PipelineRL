@@ -389,6 +389,11 @@ def clean_up(exp_dir, force_restart):
         os.remove(f"{exp_dir}/dump.rdb")
 
     if force_restart:
+        # Clean up trackio timestamp to create a new run
+        timestamp_file = f"{exp_dir}/.trackio_timestamp"
+        if os.path.exists(timestamp_file):
+            logger.info("Cleaning up trackio timestamp for fresh run")
+            os.remove(timestamp_file)
         if os.path.exists(f"{exp_dir}/finetune"):
             logger.info("Cleaning up finetune directory")
             shutil.rmtree(f"{exp_dir}/finetune")

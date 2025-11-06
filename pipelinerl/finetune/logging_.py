@@ -32,7 +32,12 @@ def setup_logging(cfg: DictConfig, output_dir: Path, run: Run | None = None):
         force=True,  # forget previous handlers
     )
     if get_accelerator().is_main_process:  # we only want to setup logging once
-        config_for_wandb = {str(k): str(v) for k, v in get_accelerator().state.__dict__.items()}
+        # Filter out keys starting with '_' as they are reserved by trackio
+        config_for_wandb = {
+            str(k): str(v)
+            for k, v in get_accelerator().state.__dict__.items()
+            if not str(k).startswith('_')
+        }
         config_for_wandb.update(flatten_dict_config(cfg))
 
         logger.setLevel(logging.INFO)
@@ -46,13 +51,12 @@ def setup_logging(cfg: DictConfig, output_dir: Path, run: Run | None = None):
         wandb_config = {}
         if run is not None:
             assert run.name is not None
+            # Trackio Run object only has name and project - no entity or id attributes
             wandb_config = {
-                "name": run.name[:128],  # wandb limits name to 128 characters
-                "entity": run.entity,
-                "project": run.project_name(),
-                "id": run.id,
+                "name": run.name[:128],  # trackio limits name to 128 characters
+                "project": run.project,
             }
-        # Save wandb name, entity, project, and ID to JSON file in output_dir
+        # Save trackio run info to JSON file in output_dir
         with open(os.path.join(output_dir, "wandb_info.json"), "w") as f:
             json.dump(wandb_config, f, indent=4)
     else:

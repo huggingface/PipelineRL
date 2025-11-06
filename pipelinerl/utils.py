@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 import traceback
 from typing import Dict, Mapping, List, Any, Union
@@ -58,6 +59,28 @@ def init_wandb(
         if not wandb_name.startswith(root + "/"):
             raise ValueError(f"run_dir {run_dir} does not start with root {root}")
         wandb_name = wandb_name[len(root) + 1 :]
+
+    # Add datetime prefix to make each run unique in trackio
+    # Store timestamp in output_dir to enable resume functionality
+    timestamp_file = Path(cfg.output_dir) / ".trackio_timestamp"
+    if timestamp_file.exists():
+        # Reuse existing timestamp for resume
+        with open(timestamp_file, 'r') as f:
+            timestamp = f.read().strip()
+        logging.info(f"Resuming with existing timestamp: {timestamp}")
+    else:
+        # Create new timestamp for new run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Only write timestamp from main process to avoid race conditions
+        try:
+            timestamp_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(timestamp_file, 'w') as f:
+                f.write(timestamp)
+            logging.info(f"Created new run with timestamp: {timestamp}")
+        except Exception as e:
+            logging.warning(f"Could not write timestamp file: {e}")
+
+    wandb_name = f"{timestamp}/{wandb_name}"
 
     wandb_id = cfg.wandb.wandb_id
     if not wandb_id:
