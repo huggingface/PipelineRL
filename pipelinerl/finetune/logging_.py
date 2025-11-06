@@ -10,8 +10,8 @@ import datasets
 import transformers
 from omegaconf import DictConfig
 
-import wandb
-from wandb.sdk import wandb_run
+import trackio as wandb
+from trackio.run import Run
 
 from pipelinerl.utils import init_wandb
 
@@ -19,7 +19,7 @@ from .context import get_accelerator, logger
 
 
 
-def setup_logging(cfg: DictConfig, output_dir: Path, run: wandb_run.Run | None = None):
+def setup_logging(cfg: DictConfig, output_dir: Path, run: Run | None = None):
     log_dir = output_dir / "log/"
     log_dir.mkdir(parents=True, exist_ok=True)
     debug_handler = logging.FileHandler(log_dir / f"info_{get_accelerator().process_index}.log")

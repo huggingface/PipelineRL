@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from tapeagents.llms import TrainableLLM
 from typing import Dict, List
 
-import wandb
+import trackio as wandb
 from pipelinerl.finetune.logging_ import flatten_dict_config, init_wandb
 from pipelinerl.rollouts import RolloutResult, BaseMetrics
 from pipelinerl.shared_memory_array import SharedMemoryQueue

@@ -19,8 +19,8 @@ from pipelinerl.world import Job
 from tapeagents.llms import LLMOutput
 from tapeagents.core import Prompt
 
-import wandb
-from wandb.sdk import wandb_run
+import trackio as wandb
+from trackio.run import Run
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def init_wandb(
     cfg: DictConfig,
     run_dir: Path,
     config_for_wandb: DictConfig | dict,
-) -> wandb_run.Run:
+) -> Run:
     """Initialize W&B.
 
     config_for_wandb is the configuration that will be logged to W&B.
@@ -66,20 +66,29 @@ def init_wandb(
     if len(wandb_name) > 128:
         logger.warning(f"wandb_name: {wandb_name} is longer than 128 characters. Truncating to 128 characters.")
 
-    logging.info(f"Initializing W&B with\nname: {wandb_name[:128]}\nid: {wandb_id}\nresume: {resume}")
-    run = wandb.init(
-        name=wandb_name[:128],  # wandb limits name to 128 characters
-        entity=cfg.wandb.wandb_entity_name,
-        project=cfg.wandb.wandb_project_name,
-        group=cfg.wandb.wandb_group,
-        dir=cfg.wandb.wandb_dir,
-        config=config_for_wandb,  # type: ignore
-        resume=resume,
-        id=wandb_id,
-        tags=cfg.wandb.tags,
-    )
-    if not isinstance(run, wandb_run.Run):
-        raise ValueError("W&B init failed")
+    logging.info(f"Initializing Trackio with\nname: {wandb_name[:128]}\nproject: {cfg.wandb.wandb_project_name}")
+
+    # Trackio supports: project, name, group, config, resume, settings, space_id, space_storage, dataset_id, private, embed
+    # Not supported: entity, id (use name instead), dir, tags
+    init_kwargs = {
+        "project": cfg.wandb.wandb_project_name,
+        "name": wandb_name[:128],
+        "config": config_for_wandb,
+    }
+
+    # Add optional parameters if they are set
+    if cfg.wandb.wandb_group:
+        init_kwargs["group"] = cfg.wandb.wandb_group
+
+    # Map wandb resume values to trackio format
+    if resume == "allow":
+        init_kwargs["resume"] = "allow"
+    elif resume == "never":
+        init_kwargs["resume"] = "never"
+
+    run = wandb.init(**init_kwargs)
+    if not isinstance(run, Run):
+        raise ValueError("Trackio init failed")
     return run
 
 
