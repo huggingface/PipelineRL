@@ -78,19 +78,25 @@ class WorkerExtension:
             world_size=weight_update_group_world_size,
         )
 
-    def receive_weight_update(self: LikeWorker, request: WeightUpdateRequest):
+    def receive_weight_update(self: LikeWorker, parameters_info: list[dict[str, Any]]):
+        """
+        Receive weight update with serializable data.
+
+        Args:
+            parameters_info: List of dicts with keys: name, shape, dtype
+        """
         torch.cuda.synchronize(self.device)
         logger.info("Start receiving weight update")
-        for info in request.parameters_info:
+        for info in parameters_info:
             model_dtype = self.model_config.dtype
-            assert info.dtype == str(model_dtype), (
-                f"mismatch dtype: src {info.dtype}, dst {self.model_config.dtype}"
+            assert info["dtype"] == str(model_dtype), (
+                f"mismatch dtype: src {info['dtype']}, dst {self.model_config.dtype}"
             )
-            buffer = torch.empty(tuple(info.shape), dtype=model_dtype, device=self.device)
+            buffer = torch.empty(tuple(info["shape"]), dtype=model_dtype, device=self.device)
             torch.distributed.broadcast(buffer, src=0, group=self.process_group)
-            loaded_params = self.model_runner.model.load_weights(weights=[(info.name, buffer)]) # type: ignore
+            loaded_params = self.model_runner.model.load_weights(weights=[(info["name"], buffer)]) # type: ignore
             if len(loaded_params) != 1:
-                raise ValueError(f"model {info.name} not found in model state dict")
+                raise ValueError(f"model {info['name']} not found in model state dict")
         logger.info("Weight update received")
 
 
@@ -111,8 +117,17 @@ class WeightUpdateManager:
         )
 
     async def receive_weight_update(self, request: WeightUpdateRequest):
+        # Convert Pydantic model to serializable data for vllm 0.11.0 compatibility
+        parameters_info = [
+            {
+                "name": info.name,
+                "shape": info.shape,
+                "dtype": info.dtype,
+            }
+            for info in request.parameters_info
+        ]
         await self.engine_client.collective_rpc_async(
-            "receive_weight_update", args=(request,)
+            "receive_weight_update", args=(parameters_info,)
         )
         logger.info("Weight update processed")
 
