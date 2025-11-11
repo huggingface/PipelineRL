@@ -14,10 +14,10 @@ authors = [
 ]
 dependencies = [
     "torch>=2.6",
-    "vllm==0.8.5.post1",
+    "vllm==0.11.0",
     "accelerate>=1.11.0",
     "transformers>=4.57.1",
-    "flash-attn==2.7.3",
+    "kernels",
     "ring-flash-attn>=0.1.8",
     "math-verify[antlr4_9_3]>=0.8.0",
     "orjson>=3.11.4",

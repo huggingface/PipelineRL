@@ -94,8 +94,8 @@ def load_model(args, model_class, current_dir):
         assert version.parse(transformers.__version__) >= version.parse("4.34.0"), (
             "flash_attention is only supported for transformers>=4.34.0. Please upgrade transformers to use it"
         )
-        loading_args["attn_implementation"] = "flash_attention_2"
-        logger.info(f"FlashAttention available: {torch.backends.cuda.flash_sdp_enabled()}")
+        loading_args["attn_implementation"] = args.attn_implementation
+        logger.info(f"Using {args.attn_implementation} for attention implementation")
 
     is_ds_zero_3 = False
     if getattr(get_accelerator().state, "deepspeed_plugin", None):

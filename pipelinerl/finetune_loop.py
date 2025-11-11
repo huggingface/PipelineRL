@@ -24,7 +24,6 @@ from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.api import MixedPrecision
 from transformers import PreTrainedTokenizerFast, get_scheduler, set_seed
-from ring_flash_attn import substitute_hf_flash_attn, update_ring_flash_attn_params
 
 from pipelinerl.finetune.value_model import AutoModelForCausalLMWithValueHead
 import pipelinerl.torch_utils
@@ -456,6 +455,7 @@ def run_finetuning_loop(
 
     seq_parallel_group = None
     if cfg.finetune.seq_parallel > 1:
+        from ring_flash_attn import substitute_hf_flash_attn
         assert get_accelerator().state.num_processes % cfg.finetune.seq_parallel == 0
         for leader_rank in range(0, get_accelerator().state.num_processes, cfg.finetune.seq_parallel):
             group_ranks = [leader_rank + i for i in range(cfg.finetune.seq_parallel)]
@@ -656,6 +656,7 @@ def rl_finetuning_worker(
         with toggle_sync(do_optimizer_step):
             # Choose RL step function based on seq_packing config
             if seq_parallel_group is not None:
+                from ring_flash_attn import update_ring_flash_attn_params
                 assert batch.seq_boundaries is not None
                 update_ring_flash_attn_params(batch.seq_boundaries, seq_parallel_group)
             loss, this_step_rl_metrics = rl_step(
