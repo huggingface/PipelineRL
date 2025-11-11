@@ -1,7 +1,10 @@
+import contextlib
 import logging
 import signal
+import time
 import torch
 import uvloop
+from typing import Any
 from vllm.utils import FlexibleArgumentParser, set_ulimit
 from vllm.entrypoints.openai.cli_args import (
     make_arg_parser,
@@ -21,15 +24,14 @@ from vllm.usage.usage_lib import UsageContext
 from vllm.config import ModelConfig
 from vllm.v1.engine.async_llm import AsyncLLM
 from vllm.v1.engine.core_client import AsyncMPClient
+from vllm.v1.worker.gpu_worker import Worker
 from vllm.v1.worker.gpu_model_runner import GPUModelRunner
 
-
-from pipelinerl.finetune_loop import WeightUpdateRequest
-from typing import Any, Protocol, runtime_checkable
 import pipelinerl.torch_utils
+from pipelinerl.finetune_loop import WeightUpdateRequest
 
 logger = logging.getLogger(__name__)
-# configure this logger individually, in order to avoid messign
+# configure this logger individually, in order to avoid messing
 # with the default vllm logger configuration
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
@@ -39,38 +41,62 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 
-@runtime_checkable
-class LikeWorker(Protocol):
-    rank: int
-    local_rank: int
-    device: torch.device
-    model_runner: GPUModelRunner 
-    pg_rank: int
-    process_group: Any
-    model_config: ModelConfig
-
-
 class WorkerExtension:
+    """
+    Extension for vLLM workers to support weight updates and custom operations.
+
+    This class follows modern patterns from NeMo RL (3rd_party/RL/)
+    for weight update methods and collective operations.
+
+    Note on performance: Currently uses torch.distributed.broadcast for weight updates.
+    For production workloads with large models (70B+), consider implementing IPC/ZMQ
+    based updates (as in NeMo RL) which can be 10-100x faster (100-500ms vs 5-10s).
+    """
+
+    @contextlib.contextmanager
+    def time(self, name: str):
+        """
+        Context manager for timing operations.
+
+        Following the pattern from ART for performance monitoring.
+
+        Args:
+            name: Name of the operation being timed.
+        """
+        start_time = time.perf_counter()
+        yield
+        end_time = time.perf_counter()
+        logger.info(f"{name}: {end_time - start_time:.2f} seconds")
 
     def init_actor_update_group(
-        self: LikeWorker,
+        self,
         actor_idx: int,
         actor_ngpus: int,
         weight_update_group_init_method: str,
         weight_update_group_world_size: int,
     ):
-        self.pg_rank = 1 + actor_idx * actor_ngpus + self.rank
-        # log all you know
+        """
+        Initialize the actor's process group for weight updates.
+
+        Args:
+            actor_idx: Index of this actor in the distributed setup.
+            actor_ngpus: Number of GPUs per actor.
+            weight_update_group_init_method: Initialization method for the process group.
+            weight_update_group_world_size: Total world size of the process group.
+        """
+        self.pg_rank = 1 + actor_idx * actor_ngpus + self.rank  # type: ignore
         prefix = "[INIT_ACTOR_UPDATE_GROUP]: "
         logger.info(
             prefix
-            + f"Actor index: {actor_idx}, actor ngpus: {actor_ngpus}, rank: {self.rank}, pg_rank: {self.pg_rank}"
+            + f"Actor index: {actor_idx}, actor ngpus: {actor_ngpus}, "
+            + f"rank: {self.rank}, pg_rank: {self.pg_rank}"  # type: ignore
         )
         logger.info(
             prefix
-            + f"Weight update group init method: {weight_update_group_init_method}, world size: {weight_update_group_world_size}"
+            + f"Weight update group init method: {weight_update_group_init_method}, "
+            + f"world size: {weight_update_group_world_size}"
         )
-        self.process_group = pipelinerl.torch_utils.init_extra_process_group(
+        self.process_group = pipelinerl.torch_utils.init_extra_process_group(  # type: ignore
             group_name="actor",
             backend="nccl",
             init_method=weight_update_group_init_method,
@@ -78,26 +104,43 @@ class WorkerExtension:
             world_size=weight_update_group_world_size,
         )
 
-    def receive_weight_update(self: LikeWorker, parameters_info: list[dict[str, Any]]):
+    def receive_weight_update(self, parameters_info: list[dict[str, Any]]):
         """
         Receive weight update with serializable data.
+
+        This method uses torch.distributed.broadcast for weight updates.
 
         Args:
             parameters_info: List of dicts with keys: name, shape, dtype
         """
-        torch.cuda.synchronize(self.device)
+        torch.cuda.synchronize(self.device)  # type: ignore
         logger.info("Start receiving weight update")
         for info in parameters_info:
-            model_dtype = self.model_config.dtype
+            model_dtype = self.model_config.dtype  # type: ignore
             assert info["dtype"] == str(model_dtype), (
-                f"mismatch dtype: src {info['dtype']}, dst {self.model_config.dtype}"
+                f"mismatch dtype: src {info['dtype']}, dst {self.model_config.dtype}"  # type: ignore
             )
-            buffer = torch.empty(tuple(info["shape"]), dtype=model_dtype, device=self.device)
-            torch.distributed.broadcast(buffer, src=0, group=self.process_group)
-            loaded_params = self.model_runner.model.load_weights(weights=[(info["name"], buffer)]) # type: ignore
+            buffer = torch.empty(
+                tuple(info["shape"]), dtype=model_dtype, device=self.device  # type: ignore
+            )
+            torch.distributed.broadcast(buffer, src=0, group=self.process_group)  # type: ignore
+            loaded_params = self.model_runner.model.load_weights(  # type: ignore
+                weights=[(info["name"], buffer)]
+            )
             if len(loaded_params) != 1:
                 raise ValueError(f"model {info['name']} not found in model state dict")
         logger.info("Weight update received")
+
+
+class ExtendedWorker(Worker, WorkerExtension):
+    """
+    Extended worker that combines vLLM's Worker with our custom extensions.
+
+    This follows the pattern from ART where we create a class that inherits
+    from both Worker and WorkerExtension to provide both base functionality
+    and custom methods.
+    """
+    pass
 
 
 class WeightUpdateManager:
@@ -133,7 +176,14 @@ class WeightUpdateManager:
 
 
 async def run_server(args, **uvicorn_kwargs) -> None:
-    # COPIED FROM vllm/entrypoints/openai/api_server.py, vllm version 0.6.6.post1
+    """
+    Run the vLLM OpenAI-compatible API server with PipelineRL extensions.
+
+    This follows modern patterns from ART and NeMo RL:
+    - Uses AsyncLLM.from_engine_args() instead of from_vllm_config()
+    - Enables sleep mode for better resource management
+    - Properly configures worker_extension_cls
+    """
     logger.info("vLLM API server version %s", version)
     logger.info("args: %s", args)
 
@@ -162,16 +212,20 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # Modern pattern: Use from_engine_args() with worker_extension_cls and enable_sleep_mode
+    # This follows the pattern from ART (3rd_party/ART/src/art/vllm/engine.py)
     engine_args = AsyncEngineArgs.from_cli_args(args)
-    engine_args.worker_extension_cls = "pipelinerl.vllm1.WorkerExtension"
-    engine_config = engine_args.create_engine_config(UsageContext.OPENAI_API_SERVER)
-    engine = AsyncLLM.from_vllm_config(
-        vllm_config=engine_config,
-        usage_context=UsageContext.OPENAI_API_SERVER,
-        disable_log_stats=engine_args.disable_log_stats,
-        disable_log_requests=engine_args.disable_log_requests,
-    )
+    engine_args.worker_extension_cls = f"{WorkerExtension.__module__}.{WorkerExtension.__qualname__}"
+    engine_args.enable_sleep_mode = True
+
+    logger.info("Initializing AsyncLLM with worker_extension_cls=%s, enable_sleep_mode=%s",
+                engine_args.worker_extension_cls, engine_args.enable_sleep_mode)
+
+    engine = AsyncLLM.from_engine_args(engine_args)
     assert isinstance(engine.engine_core, AsyncMPClient)
+
+    # Get engine config for app state initialization
+    engine_config = engine_args.create_engine_config(UsageContext.OPENAI_API_SERVER)
 
     weight_update_manager = WeightUpdateManager(args, engine.engine_core)
     if not args.disable_weight_updates:
