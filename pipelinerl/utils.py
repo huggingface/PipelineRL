@@ -20,8 +20,8 @@ from pipelinerl.world import Job
 from tapeagents.llms import LLMOutput
 from tapeagents.core import Prompt
 
-import trackio as wandb
-from trackio.run import Run
+import wandb
+from wandb.sdk import wandb_run
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def init_wandb(
     cfg: DictConfig,
     run_dir: Path,
     config_for_wandb: DictConfig | dict,
-) -> Run:
+) -> wandb_run.Run:
     """Initialize W&B.
 
     config_for_wandb is the configuration that will be logged to W&B.
@@ -60,28 +60,6 @@ def init_wandb(
             raise ValueError(f"run_dir {run_dir} does not start with root {root}")
         wandb_name = wandb_name[len(root) + 1 :]
 
-    # Add datetime prefix to make each run unique in trackio
-    # Store timestamp in output_dir to enable resume functionality
-    timestamp_file = Path(cfg.output_dir) / ".trackio_timestamp"
-    if timestamp_file.exists():
-        # Reuse existing timestamp for resume
-        with open(timestamp_file, 'r') as f:
-            timestamp = f.read().strip()
-        logging.info(f"Resuming with existing timestamp: {timestamp}")
-    else:
-        # Create new timestamp for new run
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Only write timestamp from main process to avoid race conditions
-        try:
-            timestamp_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(timestamp_file, 'w') as f:
-                f.write(timestamp)
-            logging.info(f"Created new run with timestamp: {timestamp}")
-        except Exception as e:
-            logging.warning(f"Could not write timestamp file: {e}")
-
-    wandb_name = f"{timestamp}/{wandb_name}"
-
     wandb_id = cfg.wandb.wandb_id
     if not wandb_id:
         wandb_id = wandb_name.replace("/", "_")
@@ -89,38 +67,20 @@ def init_wandb(
     if len(wandb_name) > 128:
         logger.warning(f"wandb_name: {wandb_name} is longer than 128 characters. Truncating to 128 characters.")
 
-    logging.info(f"Initializing Trackio with\nname: {wandb_name[:128]}\nproject: {cfg.wandb.wandb_project_name}")
-
-    # Trackio supports: project, name, group, config, resume, settings, space_id, space_storage, dataset_id, private, embed
-    # Not supported: entity, id (use name instead), dir, tags
-    init_kwargs = {
-        "project": cfg.wandb.wandb_project_name,
-        "name": wandb_name[:128],
-        "config": config_for_wandb,
-    }
-
-    # Add optional parameters if they are set
-    if cfg.wandb.wandb_group:
-        init_kwargs["group"] = cfg.wandb.wandb_group
-
-    # Add trackio-specific HuggingFace parameters
-    if hasattr(cfg.wandb, 'space_id') and cfg.wandb.space_id:
-        init_kwargs["space_id"] = cfg.wandb.space_id
-        logging.info(f"Trackio will host dashboard on HuggingFace Space: {cfg.wandb.space_id}")
-
-    if hasattr(cfg.wandb, 'dataset_id') and cfg.wandb.dataset_id:
-        init_kwargs["dataset_id"] = cfg.wandb.dataset_id
-        logging.info(f"Trackio will persist data to HuggingFace Dataset: {cfg.wandb.dataset_id}")
-
-    # Map wandb resume values to trackio format
-    if resume == "allow":
-        init_kwargs["resume"] = "allow"
-    elif resume == "never":
-        init_kwargs["resume"] = "never"
-
-    run = wandb.init(**init_kwargs)
-    if not isinstance(run, Run):
-        raise ValueError("Trackio init failed")
+    logging.info(f"Initializing W&B with\nname: {wandb_name[:128]}\nid: {wandb_id}\nresume: {resume}")
+    run = wandb.init(
+        name=wandb_name[:128],  # wandb limits name to 128 characters
+        entity=cfg.wandb.wandb_entity_name,
+        project=cfg.wandb.wandb_project_name,
+        group=cfg.wandb.wandb_group,
+        dir=cfg.wandb.wandb_dir,
+        config=config_for_wandb,  # type: ignore
+        resume=resume,
+        id=wandb_id,
+        tags=cfg.wandb.tags,
+    )
+    if not isinstance(run, wandb_run.Run):
+        raise ValueError("W&B init failed")
     return run
 
 
